@@ -18,7 +18,8 @@
  
  */
 __global__ 
-void im2Gray(uchar4 *d_in, unsigned char *d_grey, int numRows, int numCols){
+void im2Gray(uchar4 *d_in, unsigned char *d_grey, int numRows, int numCols)
+{
 	/*
 		Your kernel here: Make sure to check for boundary conditions
 	*/
@@ -36,16 +37,17 @@ void im2Gray(uchar4 *d_in, unsigned char *d_grey, int numRows, int numCols){
 
 
 
-void launch_im2gray(uchar4 *d_in, unsigned char* d_grey, size_t numRows, size_t numCols){
+void launch_im2gray(uchar4 *d_in, unsigned char* d_grey, size_t numRows, size_t numCols)
+{
     // configure launch params here 
-    
+
     dim3 block(BLOCK,BLOCK,1);
     dim3 grid(ceil(numRows/(float)BLOCK),ceil(numCols/(float)BLOCK), 1);
 
     im2Gray<<<grid,block>>>(d_in, d_grey, numRows, numCols);
     cudaDeviceSynchronize();
     checkCudaErrors(cudaGetLastError());
-    
+
 }
 
 
