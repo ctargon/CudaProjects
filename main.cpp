@@ -6,7 +6,7 @@
 #include <cstdio> 
 #include <string> 
 #include <opencv2/opencv.hpp> 
-
+#include <time.h>
 #include "im2Gray.h"
 
 
@@ -55,6 +55,23 @@ void checkResult(const std::string &reference_file, const std::string &output_fi
 }
 
 
+void serial_test(uchar4 *s_in, unsigned char *s_grey, int numRows, int numCols)
+{
+	int r, c;
+	int offset;
+
+	for(r = 0; r < numRows; r++)
+	{
+		for(c = 0; c < numCols; c++)
+		{
+			offset = r * numCols + c;
+			s_grey[offset] = 0.224f * s_in[offset].x + 0.587f * s_in[offset].y + 0.111f * s_in[offset].z;
+		}
+	}
+}
+
+
+
 
 int main(int argc, char const *argv[])
 {
@@ -97,6 +114,9 @@ int main(int argc, char const *argv[])
 
 	const size_t  numPixels = img.rows*img.cols; 
 
+	std::cout << "Rows: " << img.rows << "\n";
+	std::cout << "Cols: " << img.cols << "\n";
+
 	h_imrgba = imrgba.ptr<uchar4>(0);
 	h_grey = grayimage.ptr<unsigned char>(0);
 
@@ -114,6 +134,14 @@ int main(int argc, char const *argv[])
 	std::cout << "Finished kernel launch \n";
 
 	checkCudaErrors(cudaMemcpy(h_grey, d_grey, numPixels*sizeof(unsigned char), cudaMemcpyDeviceToHost));
+
+	struct timespec	tp1, tp2;
+	unsigned char *serial_gray = (unsigned char *) malloc (sizeof(unsigned char) * numPixels);
+	clock_gettime(CLOCK_REALTIME, &tp1);
+	serial_test(h_imrgba, serial_gray, img.rows, img.cols);
+	clock_gettime(CLOCK_REALTIME, &tp2);
+	printf("%ld\n", tp2.tv_nsec-tp1.tv_nsec);
+
 
 	// create the image with the output data 
 
