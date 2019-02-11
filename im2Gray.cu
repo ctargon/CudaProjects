@@ -28,7 +28,7 @@ void im2Gray(uchar4 *d_in, unsigned char *d_grey, int numRows, int numCols)
 
 	if (col < numCols && row < numRows)
 	{
-		int idx = row * numCols + col;
+		int idx = col * numCols + row;
 		d_grey[idx] = 0.299 * d_in[idx].x + 0.587 * d_in[idx].y + 0.114 * d_in[idx].z;
 	}
 
