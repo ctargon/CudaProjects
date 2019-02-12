@@ -129,7 +129,7 @@ int main(int argc, char const *argv[])
 
 
 	h_in_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to input image 
-	h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
+	//h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
 
 	// allocate the memories for the device pointers  
 	checkCudaErrors(cudaMalloc((void **) &d_red, sizeof(unsigned char) * numPixels));
@@ -162,7 +162,7 @@ int main(int argc, char const *argv[])
 
 
 	// memcpy the output image to the host side.
-	checkCudaErrors(cudaMemcpy(h_o_img, d_in_img, sizeof(uchar4)*numPixels, cudaMemcpyDeviceToHost)); 
+	checkCudaErrors(cudaMemcpy(h_o_img, d_o_img, sizeof(uchar4)*numPixels, cudaMemcpyDeviceToHost)); 
 
 	// create the image with the output data 
 
