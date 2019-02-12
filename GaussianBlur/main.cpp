@@ -45,7 +45,7 @@ void checkResult(const std::string &reference_file, const std::string &output_fi
 	unsigned char *oPtr = out_img.ptr<unsigned char>(0);
 
 	checkApproxResults(refPtr, oPtr, ref_img.rows*ref_img.cols*ref_img.channels());
-	std::cout << "PASSED!";
+	std::cout << "PASSED!" << "\n";
 
 
 }
@@ -129,7 +129,7 @@ int main(int argc, char const *argv[])
 
 
 	h_in_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to input image 
-	//h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
+	h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
 
 	// allocate the memories for the device pointers  
 	checkCudaErrors(cudaMalloc((void **) &d_red, sizeof(unsigned char) * numPixels));
