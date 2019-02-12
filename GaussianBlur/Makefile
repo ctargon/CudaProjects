@@ -15,11 +15,11 @@ CUDA_LD_FLAGS=-L -lcuda -lcudart
 final: main.o blur.o
 	g++ -o gblur main.o blur_kernels.o $(CUDA_LD_FLAGS) $(OPENCV_LIBS)
 
-main.o:main.cpp gaussian_kernel.h utils.h 
+main.o: main.cpp gaussian_kernel.h utils.h 
 	g++ -c $(GCC_OPTS) main.cpp  $(OPENCV_LIBS) 
 
 blur.o: blur_kernels.cu gaussian_kernel.h  utils.h
-	$(NVCC) -c im2Gray.cu $(NVCC_OPTS)
+	$(NVCC) -c blur_kernels.cu $(NVCC_OPTS)
 
 clean:
 	rm *.o gblur
