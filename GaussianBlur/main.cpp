@@ -80,8 +80,8 @@ int main(int argc, char const *argv[])
 	uchar4 *d_in_img, *d_o_img; // device images in/out
 
 	//unsigned char *h_red, *h_blue, *h_green; 
-	unsigned char *d_red, *d_blue, *d_green;   
-	unsigned char *d_red_blurred, *d_blue_blurred, *d_green_blurred;   
+	unsigned char *d_red, *d_green, *d_blue;   
+	unsigned char *d_red_blurred, *d_green_blurred, *d_blue_blurred;   
 
 	float *h_filter, *d_filter;  
 	cv::Mat imrgba, o_img; 
@@ -136,8 +136,8 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMalloc((void **) &d_blue, sizeof(unsigned) * numPixels));
 	checkCudaErrors(cudaMalloc((void **) &d_green, sizeof(unsigned) * numPixels));
 	checkCudaErrors(cudaMalloc((void **) &d_red_blurred, sizeof(unsigned) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_blue_blurred, sizeof(unsigned) * numPixels));
 	checkCudaErrors(cudaMalloc((void **) &d_green_blurred, sizeof(unsigned) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_blue_blurred, sizeof(unsigned) * numPixels));
 
 	checkCudaErrors(cudaMalloc((void **) &d_in_img, sizeof(uchar4) * numPixels));
 	checkCudaErrors(cudaMalloc((void **) &d_o_img, sizeof(uchar4) * numPixels));
@@ -185,7 +185,10 @@ int main(int argc, char const *argv[])
 	cudaFree(d_red_blurred);
 	cudaFree(d_green_blurred);
 	cudaFree(d_blue_blurred);
-	
+	cudaFree(d_red);
+	cudaFree(d_green);
+	cudaFree(d_blue);
+
 	delete [] h_filter;
 	return 0;
 }
