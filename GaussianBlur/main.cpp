@@ -20,7 +20,7 @@
  * */
 void checkApproxResults(unsigned char *ref, unsigned char *gpu, size_t numElems){
 
-	for(int i = 0; i < numElems; i++){
+	for(int i = 0; i < (int) numElems; i++){
 		if(ref[i] - gpu[i] > 1e-5){
 			std::cerr << "Error at position " << i << "\n"; 
 
@@ -55,7 +55,7 @@ void gaussian_blur_filter(float *arr, const int f_sz, const float f_sigma=0.2){
 	  float norm_const = 0.0; // normalization const for the kernel 
 
 	  for(int r = -f_sz/2; r <= f_sz/2; r++){
-		 for(int c = -f_sz/2; c <= c_sz/2; c++){
+		 for(int c = -f_sz/2; c <= f_sz/2; c++){
 			  float fSum = expf(-(float)(r*r + c*c)/(2*f_sigma*f_sigma)); 
 			  arr[(r+f_sz/2)*f_sz + (c + f_sz/2)] = fSum; 
 			  filterSum  += fSum;
@@ -79,7 +79,7 @@ int main(int argc, char const *argv[])
 	uchar4 *h_in_img, *h_o_img; // pointers to the actual image input and output pointers  
 	uchar4 *d_in_img, *d_o_img; // device images in/out
 
-	unsigned char *h_red, *h_blue, *h_green; 
+	//unsigned char *h_red, *h_blue, *h_green; 
 	unsigned char *d_red, *d_blue, *d_green;   
 	unsigned char *d_red_blurred, *d_blue_blurred, *d_green_blurred;   
 
@@ -123,7 +123,7 @@ int main(int argc, char const *argv[])
 
 	cv::cvtColor(img, imrgba, cv::COLOR_BGR2RGBA);
 
-	oimg.create(img.rows, img.cols, CV_8UC4); 
+	o_img.create(img.rows, img.cols, CV_8UC4); 
 
 	const size_t  numPixels = img.rows*img.cols;  
 
@@ -179,8 +179,12 @@ int main(int argc, char const *argv[])
 	checkResult(reference, outfile, 1e-5);
 
 	// free any necessary memory.
-	cudaFree(d_imrgba);
-	cudaFree(d_grey);
+	cudaFree(d_in_img);
+	cudaFree(d_o_img);
+	cudaFree(d_filter);
+	cudaFree(d_red_blurred);
+	cudaFree(d_green_blurred);
+	cudaFree(d_blue_blurred);
 	
 	delete [] h_filter;
 	return 0;
