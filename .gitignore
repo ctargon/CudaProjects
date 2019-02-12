@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+gblur
+
+
 # Object files
 *.o
 *.ko

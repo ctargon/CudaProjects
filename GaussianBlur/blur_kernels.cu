@@ -86,6 +86,7 @@ void recombineChannels(unsigned char *d_r, unsigned char *d_g, unsigned char *d_
 		int i = col * numCols + row;
 
 		//d_orgba[i] = make_uchar4(d_r[i], d_g[i], d_b[i], 255);
+		// save the output as bgr, not rgb, because opencv defaults to that
 		d_orgba[i] = make_uchar4(d_b[i], d_g[i], d_r[i], 255); 
 	}
 } 
