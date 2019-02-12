@@ -77,11 +77,11 @@ void gaussian_blur_filter(float *arr, const int f_sz, const float f_sigma=0.2){
 int main(int argc, char const *argv[])
 {   
 	uchar4 *h_in_img, *h_o_img; // pointers to the actual image input and output pointers  
-	uchar4 *d_in_img, *d_o_img;
+	uchar4 *d_in_img, *d_o_img; // device images in/out
 
 	unsigned char *h_red, *h_blue, *h_green; 
 	unsigned char *d_red, *d_blue, *d_green;   
-	unsigned char *d_red_blurred, *d_green_blurred, *d_blue_blurred;   
+	unsigned char *d_red_blurred, *d_blue_blurred, *d_green_blurred;   
 
 	float *h_filter, *d_filter;  
 	cv::Mat imrgba, o_img; 
@@ -132,17 +132,28 @@ int main(int argc, char const *argv[])
 	h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
 
 	// allocate the memories for the device pointers  
+	checkCudaErrors(cudaMalloc((void **) &d_red, sizeof(unsigned char) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_blue, sizeof(unsigned) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_green, sizeof(unsigned) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_red_blurred, sizeof(unsigned) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_blue_blurred, sizeof(unsigned) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_green_blurred, sizeof(unsigned) * numPixels));
 
+	checkCudaErrors(cudaMalloc((void **) &d_in_img, sizeof(uchar4) * numPixels));
+	checkCudaErrors(cudaMalloc((void **) &d_o_img, sizeof(uchar4) * numPixels));
+
+	checkCudaErrors(cudaMemcpy(d_in_img, h_in_img, sizeof(uchar4)*numPixels, cudaMemcpyHostToDevice)); 
 
 
 	// filter allocation 
-	h_filter = new float[fWidth*fWidth];
+	h_filter = new float[fWidth * fWidth];
 	gaussian_blur_filter(h_filter, fWidth, fDev); // create a filter of 9x9 with std_dev = 0.2  
 
-	printArray<float>(h_filter, 81); // printUtility.
+	printArray<float>(h_filter, fWidth * fWidth, fWidth); // printUtility.
 
 	// copy the filter over to GPU here 
-
+	checkCudaErrors(cudaMalloc((void **) &d_filter, sizeof(float) * fWidth * fWidth));
+	checkCudaErrors(cudaMemcpy(d_filter, h_filter, sizeof(float) * fWidth * fWidth, cudaMemcpyHostToDevice)); 
 
 
 	// kernel launch code 
@@ -151,7 +162,7 @@ int main(int argc, char const *argv[])
 
 
 	// memcpy the output image to the host side.
-
+	checkCudaErrors(cudaMemcpy(h_o_img, d_in_img, sizeof(uchar4)*numPixels, cudaMemcpyDeviceToHost)); 
 
 	// create the image with the output data 
 

@@ -20,10 +20,10 @@ void check(T err, const char* const func, const char* const file, const int line
 } 
 
 template<typename T>
-void printArray(T *arr, const int sz){
+void printArray(T *arr, const int sz, const int width){
 
   for(int i = 0; i < sz; i++){ 
-      if(i%9 == 0){ 
+      if(i % width == 0){ 
           std::cout <<"\n";
       }
      std::cout << arr[i] << "  "; 
