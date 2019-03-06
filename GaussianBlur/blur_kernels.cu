@@ -1,7 +1,7 @@
 #include "./gaussian_kernel.h" 
 #include <math.h>
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 16
 
 /*
 	The actual gaussian blur kernel to be implemented by 
@@ -39,7 +39,41 @@ void gaussianBlur(unsigned char *d_in, unsigned char *d_out, int fWidth,
 	}
 } 
 
+#define TILE_WIDTH 32
 
+__global__ 
+void gaussianBlur_shared(unsigned char *d_in, unsigned char *d_out, int fWidth, 
+					const int numRows, const int numCols, float *d_filter)
+{
+	__shared__ unsigned char winow[TILE_WIDTH + fWidth - 1][TILE_WIDTH + fWidth - 1];	
+
+	int i, j;
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+
+	if (x < numCols && y < numRows)
+	{
+		int pixVal = 0;
+
+		int x_start = x - (fWidth / 2);
+		int y_start = y - (fWidth / 2);
+
+		for (i = 0; i < fWidth; i++)
+		{
+			for (j = 0; j < fWidth; j++)
+			{
+				int curX = x_start + j;
+				int curY = y_start + i;
+				if (curX > -1 && curX < numCols && curY > -1 && curY < numRows)
+				{
+					pixVal += d_in[curY * numCols + curX] * d_filter[i * fWidth + j];
+				}
+			}
+		}
+		d_out[y * numCols + x] = (unsigned char) pixVal;
+	}
+} 
 
 /*
 	Given an input RGBA image separate 
