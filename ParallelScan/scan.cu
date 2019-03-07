@@ -56,8 +56,10 @@ void scan(float *d_in, float *d_out, float *d_sums, size_t length)
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	// load shared memory
-	temp[2 * threadIdx.x] = d_in[2 * idx];
-	temp[2 * threadIdx.x + 1] = d_in[2 * idx + 1];
+	if (idx < length / 2) temp[2 * threadIdx.x] = d_in[2 * idx];
+	else temp[2 * threadIdx.x] = 0;
+	if (2 * idx + 1 < length) temp[2 * threadIdx.x + 1] = d_in[2 * idx + 1];
+	else temp[2 * threadIdx.x + 1] = 0;
 	__syncthreads();
 
 	for (int stride = 1; stride <= BLOCK; stride *= 2)
@@ -86,7 +88,7 @@ void scan(float *d_in, float *d_out, float *d_sums, size_t length)
 		d_out[2 * idx + 1] = temp[2 * threadIdx.x + 1];
 	}
 
-	if (d_sums != NULL && threadIdx.x == blockDim.x - 1) d_sums[idx / BLOCK] = temp[2 * threadIdx.x + 1];
+	if (d_sums && threadIdx.x == 0) d_sums[blockIdx.x] = temp[2 * BLOCK - 1];
 }
 
 __global__
@@ -101,8 +103,11 @@ void increment_scan(float *d_in, float *d_out, float *d_inc, size_t length)
 	temp[2 * threadIdx.x] = d_out[2 * idx];
 	temp[2 * threadIdx.x + 1] = d_out[2 * idx + 1];
 
-	if (blockIdx.x == 0) increment = 0;
-	else increment = d_inc[blockIdx.x - 1];
+	if (!threadIdx.x)
+	{
+		if (blockIdx.x == 0) increment = 0;
+		else increment = d_inc[blockIdx.x - 1];
+	}
 	__syncthreads();
 
 	temp[2 * threadIdx.x] += increment;
@@ -118,13 +123,16 @@ void launch_scan(float *d_in, float *d_out, float *d_sums, float *d_incs, size_t
 {
 		// configure launch params here 
 		dim3 block(BLOCK, 1, 1);
-		dim3 grid(ceil(length/(float) (2 * BLOCK)), 1, 1);
+		int grid_d = ceil(length / (2.0 * BLOCK));
+		dim3 grid(grid_d, 1, 1);
 
 		scan<<<grid,block>>>(d_in, d_out, d_sums, length);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 
-		scan<<<grid,block>>>(d_sums, d_incs, NULL, length);
+		int grid_d2 = ceil(grid_d / (2.0 * BLOCK));
+		dim3 grid2(grid_d2, 1, 1);
+		scan<<<grid2,block>>>(d_sums, d_incs, NULL, length);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 
