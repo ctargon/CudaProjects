@@ -1,8 +1,6 @@
 #include "scan.h"
 #include <math.h>
 
-#define BLOCK 1024
-
 
 
 /*
@@ -52,7 +50,7 @@ void naive_scan2(float *d_in, float *d_out, size_t length)
 }
 
 __global__
-void scan(float *d_in, float *d_out, size_t length)
+void scan(float *d_in, float *d_out, float *d_sums, size_t length)
 {
 	__shared__ float temp[2 * BLOCK];
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -87,19 +85,52 @@ void scan(float *d_in, float *d_out, size_t length)
 		d_out[2 * idx] = temp[2 * threadIdx.x];
 		d_out[2 * idx + 1] = temp[2 * threadIdx.x + 1];
 	}
+
+	if (d_sums != NULL && threadIdx.x == blockDim.x - 1) d_sums[idx / BLOCK] = temp[2 * threadIdx.x + 1];
+}
+
+__global__
+void increment_scan(float *d_in, float *d_out, float *d_inc, size_t length)
+{
+	__shared__ float temp[2 * BLOCK];
+	__shared__ float increment;
+
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	// load shared memory
+	temp[2 * threadIdx.x] = d_out[2 * idx];
+	temp[2 * threadIdx.x + 1] = d_out[2 * idx + 1];
+
+	if (blockIdx.x == 0) increment = 0;
+	else increment = d_inc[blockIdx.x - 1];
+	__syncthreads();
+
+	temp[2 * threadIdx.x] += increment;
+	temp[2 * threadIdx.x + 1] += increment; 
+	__syncthreads();
+
+	d_out[2 * idx] = temp[2 * threadIdx.x];
+	d_out[2 * idx + 1] = temp[2 * threadIdx.x + 1];
 }
 
 
-void launch_scan(float *d_in, float *d_out, size_t length)
+void launch_scan(float *d_in, float *d_out, float *d_sums, float *d_incs, size_t length)
 {
 		// configure launch params here 
 		dim3 block(BLOCK, 1, 1);
 		dim3 grid(ceil(length/(float) (2 * BLOCK)), 1, 1);
 
-		scan<<<grid,block>>>(d_in, d_out, length);
+		scan<<<grid,block>>>(d_in, d_out, d_sums, length);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 
+		scan<<<grid,block>>>(d_sums, d_incs, NULL, length);
+		cudaDeviceSynchronize();
+		checkCudaErrors(cudaGetLastError());
+
+		increment_scan<<<grid,block>>>(d_in, d_out, d_incs, length);
+		cudaDeviceSynchronize();
+		checkCudaErrors(cudaGetLastError());
 }
 
 
