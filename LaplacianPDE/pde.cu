@@ -21,13 +21,13 @@ void launch_pde(float *d_in, float *d_out, float *d_sums, float *d_incs, size_t 
 		int grid_d = ceil(length / (2.0 * BLOCK));
 		dim3 grid(grid_d, 1, 1);
 
-		scan<<<grid,block>>>(d_in, d_out, d_sums, length);
+		pde<<<grid,block>>>(d_in, d_out, d_sums, length);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 
 		int grid_d2 = ceil(grid_d / (2.0 * BLOCK));
 		dim3 grid2(grid_d2, 1, 1);
-		scan<<<grid2,block>>>(d_sums, d_incs, NULL, length);
+		pde<<<grid2,block>>>(d_sums, d_incs, NULL, length);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 

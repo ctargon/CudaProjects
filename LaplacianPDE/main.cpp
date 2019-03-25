@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdio>
 #include <math.h>
+#include <stdlib.h>
 #include <iomanip>
 // #include <cuda.h>
 // #include <cuda_runtime.h> 
@@ -54,29 +55,29 @@ void serial_pde(float *U, float *U_out, int m, int n, int iters)
 			for (j = 0; j < n; j++)
 			{
 				up = down = left = right = 0;
-				if (i - 1 > 0)
+				if (i - 1 >= 0)
 				{
 					if (k % 2) up = U_out[(i - 1) * n + j];
 					else up = U[(i - 1) * n + j];
 				}
 				if (i + 1 < m)
 				{
-					if (k % 2) up = U_out[(i + 1) * n + j];
-					else up = U[(i + 1) * n + j];				
+					if (k % 2) down = U_out[(i + 1) * n + j];
+					else down = U[(i + 1) * n + j];				
 				}
-				if (j - 1 > 0)
+				if (j - 1 >= 0)
 				{
-					if (k % 2) up = U_out[i * n + (j - 1)];
-					else up = U[i * n + (j - 1)];				
+					if (k % 2) left = U_out[i * n + (j - 1)];
+					else left = U[i * n + (j - 1)];				
 				}
 				if (j + 1 < n)
 				{
-					if (k % 2) up = U_out[i * n + (j + 1)];
-					else up = U[i * n + (j + 1)];				
+					if (k % 2) right = U_out[i * n + (j + 1)];
+					else right = U[i * n + (j + 1)];				
 				}			
 
-				if (k % 2) U_out[i * n + j] = (up + down + left + right) / 4;
-				else U[i * n + j] = (up + down + left + right) / 4;
+				if (k % 2) U[i * n + j] = (up + down + left + right) / 4;
+				else U_out[i * n + j] = (up + down + left + right) / 4;
 			}
 		}
 		k++;
