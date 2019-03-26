@@ -5,7 +5,7 @@
 
 #define BLOCK 1024
 
-void launch_pde(float *d_in, float *d_out, float *d_sums, float *d_incs, size_t length);
+void launch_pde(float *U, float *U_out, size_t m, size_t n, size_t iters);
 
 
 
