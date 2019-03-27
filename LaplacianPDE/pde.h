@@ -4,7 +4,7 @@
 #include "utils.h"
 
 
-void launch_pde(float *U, float *U_out, size_t m, size_t n, size_t iters);
+void launch_pde(float **U, float **U_out, size_t m, size_t n, size_t iters);
 
 
 
