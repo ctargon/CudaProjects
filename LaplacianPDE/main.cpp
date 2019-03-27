@@ -45,7 +45,7 @@ void print_matrix(float *in, int m, int n)
 }
 
 
-void serial_pde(float *U, float *U_out, int m, int n, int iters)
+void serial_pde(float **U, float **U_out, int m, int n, int iters)
 {
 	int i, j, k = 0;
 
@@ -60,29 +60,29 @@ void serial_pde(float *U, float *U_out, int m, int n, int iters)
 				up = down = left = right = 0;
 				if (i - 1 >= 0)
 				{
-					up = U[(i - 1) * n + j];
+					up = (*U)[(i - 1) * n + j];
 				}
 				if (i + 1 < m)
 				{
-					down = U[(i + 1) * n + j];
+					down = (*U)[(i + 1) * n + j];
 				}
 				if (j - 1 >= 0)
 				{
-					left = U[i * n + (j - 1)];
+					left = (*U)[i * n + (j - 1)];
 				}
 				if (j + 1 < n)
 				{
-					right = U[i * n + (j + 1)];
+					right = (*U)[i * n + (j + 1)];
 				}			
-				U_out[i * n + j] = (up + down + left + right) / 4;
+				(*U_out)[i * n + j] = (up + down + left + right) / 4;
 			}
 		}
 		k++;
 		if (k < iters)
 		{
-			tmp = U_out;
-			U_out = U;
-			U = tmp;			
+			tmp = *U_out;
+			*U_out = U;
+			*U = tmp;			
 		}
 	}
 }
@@ -141,7 +141,7 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * m * n, cudaMemcpyHostToDevice));
 
 	// call the kernel 
-	launch_scan(d_U, d_U_out, m, n, iters);
+	launch_scan(&d_U, &d_U_out, m, n, iters);
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());
 
@@ -151,7 +151,7 @@ int main(int argc, char const *argv[])
 
 	struct timespec	tp1, tp2;
 	clock_gettime(CLOCK_REALTIME, &tp1);
-	serial_pde(s_U, s_U_out, m, n, iters);
+	serial_pde(&s_U, &s_U_out, m, n, iters);
 	clock_gettime(CLOCK_REALTIME, &tp2);
 	printf("Serial time (ns): %ld\n", tp2.tv_nsec-tp1.tv_nsec);
 
