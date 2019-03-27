@@ -81,7 +81,7 @@ void serial_pde(float **U, float **U_out, int m, int n, int iters)
 		if (k < iters)
 		{
 			tmp = *U_out;
-			*U_out = U;
+			*U_out = *U;
 			*U = tmp;			
 		}
 	}
@@ -141,11 +141,7 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * m * n, cudaMemcpyHostToDevice));
 
 	// call the kernel 
-<<<<<<< Updated upstream
 	launch_scan(&d_U, &d_U_out, m, n, iters);
-=======
-	launch_pde(d_U, d_U_out, m, n, iters);
->>>>>>> Stashed changes
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());
 

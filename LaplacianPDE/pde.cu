@@ -53,7 +53,7 @@ void pde_shared(float *U, float *U_out, size_t m, size_t n)
 }
 
 
-void launch_pde(float *U, float *U_out, size_t m, size_t n, size_t iters)
+void launch_pde(float **U, float **U_out, size_t m, size_t n, size_t iters)
 {
 	int k = 0;
 	float *tmp;
@@ -63,15 +63,15 @@ void launch_pde(float *U, float *U_out, size_t m, size_t n, size_t iters)
 
 	while (k < iters)
 	{
-		pde<<<grid,block>>>(U, U_out, m, n);
+		pde<<<grid,block>>>(*U, *U_out, m, n);
 		cudaDeviceSynchronize();
 		checkCudaErrors(cudaGetLastError());
 		k++;
 		if (k < iters)
 		{
-			tmp = U_out;
-			U_out = U;
-			U = tmp;
+			tmp = *U_out;
+			*U_out = *U;
+			*U = tmp;
 		}
 	}
 }
