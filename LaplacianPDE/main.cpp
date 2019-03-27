@@ -3,12 +3,12 @@
 #include <math.h>
 #include <stdlib.h>
 #include <iomanip>
-// #include <cuda.h>
-// #include <cuda_runtime.h> 
+#include <cuda.h>
+#include <cuda_runtime.h> 
 #include <cassert>
 #include <string> 
 #include <time.h>
-// #include "pde.h"
+#include "pde.h"
 
 
 void checkResults(float *ref, float *gpu, size_t m, size_t n){
@@ -141,7 +141,11 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * m * n, cudaMemcpyHostToDevice));
 
 	// call the kernel 
+<<<<<<< Updated upstream
 	launch_scan(&d_U, &d_U_out, m, n, iters);
+=======
+	launch_pde(d_U, d_U_out, m, n, iters);
+>>>>>>> Stashed changes
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());
 
@@ -149,14 +153,18 @@ int main(int argc, char const *argv[])
 
 	checkCudaErrors(cudaMemcpy(h_U_out, d_U_out, sizeof(float) * m * n, cudaMemcpyDeviceToHost));
 
-	struct timespec	tp1, tp2;
-	clock_gettime(CLOCK_REALTIME, &tp1);
-	serial_pde(&s_U, &s_U_out, m, n, iters);
-	clock_gettime(CLOCK_REALTIME, &tp2);
-	printf("Serial time (ns): %ld\n", tp2.tv_nsec-tp1.tv_nsec);
+	//struct timespec	tp1, tp2;
+	clock_t start, stop;
 
-	printf("serial output:\n");
-	print_matrix(s_U_out, m, n);
+	//clock_gettime(CLOCK_REALTIME, &tp1);
+	start = clock();
+	serial_pde(s_U, s_U_out, m, n, iters);
+	stop = clock();
+	//clock_gettime(CLOCK_REALTIME, &tp2);
+	printf("Serial time (ns): %f\n", ((double) (stop - start)) / CLOCKS_PER_SEC);//tp2.tv_sec-tp1.tv_sec);
+
+	//printf("serial output:\n");
+	//print_matrix(s_U_out, m, n);
 
 	// check if the caclulation was correct to a degree of tolerance
 	checkResults(s_U_out, h_U_out, m, n);
