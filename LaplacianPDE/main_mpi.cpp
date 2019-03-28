@@ -8,6 +8,7 @@
 #include <cassert>
 #include <string> 
 #include <time.h>
+#include <mpi.h>
 #include "pde.h"
 
 
@@ -36,7 +37,7 @@ void print_matrix(float *in, int m, int n)
 	{
 		for (j = 0; j < n; j++)
 		{
-			printf("%f ", in[i * n + j]);
+			printf("%.4f ", in[i * n + j]);
 		}
 		printf("\n");
 	}
@@ -58,53 +59,65 @@ void serial_pde(float **U, float **U_out, int m, int n, int iters)
 			for (j = 0; j < n; j++)
 			{
 				up = down = left = right = 0;
-				if (i > 0)
+				if (i - 1 >= 0)
 				{
 					up = (*U)[(i - 1) * n + j];
 				}
-				if (i < m - 1)
+				if (i + 1 < m)
 				{
 					down = (*U)[(i + 1) * n + j];
 				}
-				if (j > 0)
+				if (j - 1 >= 0)
 				{
 					left = (*U)[i * n + (j - 1)];
 				}
-				if (j < n - 1)
+				if (j + 1 < n)
 				{
 					right = (*U)[i * n + (j + 1)];
 				}			
 				(*U_out)[i * n + j] = (up + down + left + right) / 4.0;
 			}
 		}
-		tmp = *U;
-		*U = *U_out;
-		*U_out = tmp;
 		k++;
+		if (k < iters)
+		{
+			tmp = *U_out;
+			*U_out = *U;
+			*U = tmp;			
+		}
 	}
-	tmp = *U;
-	*U = *U_out;
-	*U_out = tmp;
 }
 
-int main(int argc, char const *argv[])
+int main(int argc, char **argv)
 {
-	float *s_U, *s_U_out, *h_U, *d_U, *h_U_out, *d_U_out;
-	int m = -1, n = -1, i, j, iters = 5;
+	MPI_Init(&argc, &argv);
+
+	int rank, numprocs;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+
+	float  *s_U, *s_U_out, *h_U, *d_U, *h_U_out, *d_U_out;
+	int m = -1, n = -1, i, j, iters = 10;
 	time_t t;
 
 	srand((unsigned) time(&t));
 
-	switch(argc)
+	if (rank == 0)
 	{
-		case 3:
-			m = atoi(argv[1]);
-			n = atoi(argv[2]);
-			break; 
-		default: 
-			std::cerr << "Usage ./pde <m> <n>\n";
-			exit(1);
+		switch(argc)
+		{
+			case 3:
+				m = atoi(argv[1]);
+				n = atoi(argv[2]);
+				break; 
+			default: 
+				std::cerr << "Usage ./pde <m> <n>\n";
+				exit(1);
+		}
 	}
+
+	MPI_Bcast(&m, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	// set up array
 	h_U = (float *) malloc (sizeof(float) * m * n);
@@ -112,30 +125,36 @@ int main(int argc, char const *argv[])
 	h_U_out = (float *) calloc (m * n, sizeof(float));
 	s_U_out = (float *) calloc (m * n, sizeof(float));
 
-	for (i = 0; i < m; i++)
+	if (rank == 0)
 	{
-		for (j = 0; j < n; j++)
+		for (i = 0; i < m; i++)
 		{
-			float r = (float)(rand() / (float)RAND_MAX);	
-			h_U[i * n + j] = r;
-			s_U[i * n + j] = r;		
+			for (j = 0; j < n; j++)
+			{
+				float r = (float)(rand() % 1000) / 1000.0;	
+				s_U[i * n + j] = r;
+				h_U[i * n + j] = r;
+			}
+		}
+
+		float delta = 1.0;
+		for (i = 0; i < m; i++)
+		{
+			float row_sum = 0;
+			for (j = 0; j < n; j++)
+			{
+				row_sum += s_U[i * n + j];
+			}
+			s_U[i * n + i] = row_sum + delta; 
+			h_U[i * n + i] = row_sum + delta;
 		}
 	}
 
-	float delta = 1.0;
-	for (i = 0; i < m; i++)
-	{
-		float row_sum = 0;
-		for (j = 0; j < n; j++)
-		{
-			row_sum += h_U[i * n + j];
-		}
-		if (i < n)
-		{
-			h_U[i * n + i] = row_sum + delta;
-			s_U[i * n + i] = row_sum + delta;
-		}
-	}
+	MPI_Bcast(s_U, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(h_U, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+	//printf("process %d of %d using matrix of size %d x %d\n", rank, numprocs, m,  n);
+	//print_matrix(s_U, m, n);
 
 	checkCudaErrors(cudaMalloc((void**)&d_U, sizeof(float) * m * n));
 	checkCudaErrors(cudaMalloc((void**)&d_U_out, sizeof(float) * m * n));
@@ -151,6 +170,7 @@ int main(int argc, char const *argv[])
 	std::cout << "Finished kernel launch \n";
 
 	checkCudaErrors(cudaMemcpy(h_U_out, d_U_out, sizeof(float) * m * n, cudaMemcpyDeviceToHost));
+
 	struct timespec	tp1, tp2;
 
 	clock_gettime(CLOCK_REALTIME, &tp1);
@@ -160,6 +180,7 @@ int main(int argc, char const *argv[])
 	double d2 = tp2.tv_sec + tp2.tv_nsec / 1000000000.0;
 
 	printf("Serial time (ms): %f\n", (d2 - d1) * 1000.0);
+
 	// check if the caclulation was correct to a degree of tolerance
 	checkResults(s_U_out, h_U_out, m, n);
 	std::cout << "Results match.\n";
@@ -170,6 +191,8 @@ int main(int argc, char const *argv[])
 	free(h_U_out);
 	free(s_U);
 	free(s_U_out);
+
+	MPI_Finalize();
 
 	return 0;
 }
