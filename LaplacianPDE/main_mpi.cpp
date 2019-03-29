@@ -8,7 +8,7 @@
 #include <cassert>
 #include <string> 
 #include <time.h>
-#include <mpi.h>
+//#include <mpi.h>
 #include "pde.h"
 
 
@@ -22,7 +22,7 @@ void checkResults(float *ref, float *gpu, size_t m, size_t n){
 				std::cerr << "Error at position " << i << "\n"; 
 				std::cerr << "Reference:: " << std::setprecision(17) << + ref[i * n + j] <<"\n";
 				std::cerr << "GPU:: " << +gpu[i * n + j] << "\n";
-				exit(1);
+				exit(99);
 			}
 		}
 	}
@@ -58,23 +58,10 @@ void serial_pde(float **U, float **U_out, int m, int n, int iters)
 		{
 			for (j = 0; j < n; j++)
 			{
-				up = down = left = right = 0;
-				if (i - 1 >= 0)
-				{
-					up = (*U)[(i - 1) * n + j];
-				}
-				if (i + 1 < m)
-				{
-					down = (*U)[(i + 1) * n + j];
-				}
-				if (j - 1 >= 0)
-				{
-					left = (*U)[i * n + (j - 1)];
-				}
-				if (j + 1 < n)
-				{
-					right = (*U)[i * n + (j + 1)];
-				}			
+				up = (*U)[((i - 1 + m) % m) * n + j];
+				down = (*U)[((i + 1) % m) * n + j];
+				left = (*U)[i * n + ((j - 1 + n) % n)];
+				right = (*U)[i * n + ((j + 1) % n)];
 				(*U_out)[i * n + j] = (up + down + left + right) / 4.0;
 			}
 		}
@@ -97,7 +84,7 @@ int main(int argc, char **argv)
 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 
 	float  *s_U, *s_U_out, *h_U, *d_U, *h_U_out, *d_U_out;
-	int m = -1, n = -1, i, j, iters = 10;
+	int m = -1, n = -1, i, j, iters = 1;
 	time_t t;
 
 	srand((unsigned) time(&t));
@@ -148,42 +135,53 @@ int main(int argc, char **argv)
 			s_U[i * n + i] = row_sum + delta; 
 			h_U[i * n + i] = row_sum + delta;
 		}
+		print_matrix(s_U, m, n);
 	}
 
-	MPI_Bcast(s_U, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-	MPI_Bcast(h_U, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	// each submatrix is m * n / 4, plus 2 additional rows for halo swapping
+	float *sub_U = (float *) calloc ((m * n / numprocs) + 2 * n, sizeof(float));
+	float *sub_U_out = (float *) calloc ((m * n / numprocs) + 2 * n, sizeof(float));
 
-	//printf("process %d of %d using matrix of size %d x %d\n", rank, numprocs, m,  n);
-	//print_matrix(s_U, m, n);
+	// each submatrix is m * n / 4, plus 2 additional rows for halo swapping
+	checkCudaErrors(cudaMalloc((void**)&d_U, sizeof(float) * ((m * n / numprocs) + 2 * n)));
+	checkCudaErrors(cudaMalloc((void**)&d_U_out, sizeof(float) * ((m * n / numprocs) + 2 * n)));
 
-	checkCudaErrors(cudaMalloc((void**)&d_U, sizeof(float) * m * n));
-	checkCudaErrors(cudaMalloc((void**)&d_U_out, sizeof(float) * m * n));
+	// the receiver is offset by n so you can swap halos for the row before and there is room to swap in the last row allocated
+	MPI_Scatter(h_U, m * n / numprocs, MPI_FLOAT, &sub_U[n], m * n / numprocs, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-	checkCudaErrors(cudaMemcpy(d_U, h_U, sizeof(float) * m * n, cudaMemcpyHostToDevice)); 
-	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * m * n, cudaMemcpyHostToDevice));
+	//print_matrix(sub_U, m / numprocs + 2, n);
+
+	checkCudaErrors(cudaMemcpy(d_U, h_U, sizeof(float) * ((m * n / numprocs) + 2 * n), cudaMemcpyHostToDevice)); 
+	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * ((m * n / numprocs) + 2 * n), cudaMemcpyHostToDevice));
 
 	// call the kernel 
-	launch_pde(&d_U, &d_U_out, m, n, iters);
+	launch_pde(&d_U, &d_U_out, m, n, iters, rank, numprocs);
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());
 
 	std::cout << "Finished kernel launch \n";
 
-	checkCudaErrors(cudaMemcpy(h_U_out, d_U_out, sizeof(float) * m * n, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(sub_U_out, d_U_out, sizeof(float) * ((m * n / numprocs) + 2 * n), cudaMemcpyDeviceToHost));
 
-	struct timespec	tp1, tp2;
+	MPI_Gather(&sub_U_out[n], m * n / numprocs, MPI_FLOAT, h_U_out, m * n / numprocs, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-	clock_gettime(CLOCK_REALTIME, &tp1);
-	serial_pde(&s_U, &s_U_out, m, n, iters);
-	clock_gettime(CLOCK_REALTIME, &tp2);
-	double d1 = tp1.tv_sec + tp1.tv_nsec / 1000000000.0;
-	double d2 = tp2.tv_sec + tp2.tv_nsec / 1000000000.0;
+	if (rank == 0)
+	{
+		struct timespec	tp1, tp2;
+		clock_gettime(CLOCK_REALTIME, &tp1);
+		serial_pde(&s_U, &s_U_out, m, n, iters);
+		clock_gettime(CLOCK_REALTIME, &tp2);
+		double d1 = tp1.tv_sec + tp1.tv_nsec / 1000000000.0;
+		double d2 = tp2.tv_sec + tp2.tv_nsec / 1000000000.0;
+		print_matrix(s_U_out, m, n);
 
-	printf("Serial time (ms): %f\n", (d2 - d1) * 1000.0);
+		printf("Serial time (ms): %f\n", (d2 - d1) * 1000.0);
 
-	// check if the caclulation was correct to a degree of tolerance
-	checkResults(s_U_out, h_U_out, m, n);
-	std::cout << "Results match.\n";
+		// check if the caclulation was correct to a degree of tolerance
+		checkResults(s_U_out, h_U_out, m, n);
+		std::cout << "Results match.\n";
+	}
+
 
 	cudaFree(d_U);
 	cudaFree(d_U_out);

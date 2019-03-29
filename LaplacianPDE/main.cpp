@@ -8,7 +8,7 @@
 #include <cassert>
 #include <string> 
 #include <time.h>
-#include "pde.h"
+#include "pde_single.h"
 
 
 void checkResults(float *ref, float *gpu, size_t m, size_t n){
@@ -57,24 +57,11 @@ void serial_pde(float **U, float **U_out, int m, int n, int iters)
 		{
 			for (j = 0; j < n; j++)
 			{
-				up = down = left = right = 0;
-				if (i > 0)
-				{
-					up = (*U)[(i - 1) * n + j];
-				}
-				if (i < m - 1)
-				{
-					down = (*U)[(i + 1) * n + j];
-				}
-				if (j > 0)
-				{
-					left = (*U)[i * n + (j - 1)];
-				}
-				if (j < n - 1)
-				{
-					right = (*U)[i * n + (j + 1)];
-				}			
-				(*U_out)[i * n + j] = (up + down + left + right) / 4.0;
+                up = (*U)[((i - 1 + m) % m) * n + j];
+                down = (*U)[((i + 1) % m) * n + j];
+                left = (*U)[i * n + ((j - 1 + n) % n)];
+                right = (*U)[i * n + ((j + 1) % n)];
+                (*U_out)[i * n + j] = (up + down + left + right) / 4.0;		
 			}
 		}
 		tmp = *U;
@@ -90,7 +77,7 @@ void serial_pde(float **U, float **U_out, int m, int n, int iters)
 int main(int argc, char const *argv[])
 {
 	float *s_U, *s_U_out, *h_U, *d_U, *h_U_out, *d_U_out;
-	int m = -1, n = -1, i, j, iters = 5;
+	int m = -1, n = -1, i, j, iters = 50;
 	time_t t;
 
 	srand((unsigned) time(&t));
@@ -144,6 +131,7 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMemcpy(d_U_out, h_U_out, sizeof(float) * m * n, cudaMemcpyHostToDevice));
 
 	// call the kernel 
+	printf("launching kernel...\n");
 	launch_pde(&d_U, &d_U_out, m, n, iters);
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());
