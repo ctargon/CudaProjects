@@ -7,189 +7,167 @@
 #include <string> 
 #include <opencv2/opencv.hpp> 
 #include <cmath> 
+#include <iomanip>
+#include <random>
 
 #include "utils.h"
-#include "gaussian_kernel.h"
+#include "batchnorm.h"
+
+#define EPSILON 1e-3
+
+void print_matrix(float *in, int m, int n)
+{
+	int i, j;
+
+	for (i = 0; i < m; i++) 
+	{
+		for (j = 0; j < n; j++)
+		{
+			if (in[i * n + j]) printf("& ");
+			else printf("  ");
+		}
+		printf("\n");
+	}
+	printf("\n");
+}
 
 
-/* 
- * Compute if the two images are correctly 
- * computed. The reference image can 
- * either be produced by a software or by 
- * your own serial implementation.
- * */
-void checkApproxResults(unsigned char *ref, unsigned char *gpu, size_t numElems){
+void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size_t rows, size_t cols, size_t depth)
+{
+	float *mean = (float *) calloc (rows * cols * depth, sizeof(float));
+	float *var = (float *) malloc (sizeof(float) * rows * cols * depth);
 
-	for(int i = 0; i < (int) numElems; i++){
-		if(ref[i] - gpu[i] > 1e-5){
-			std::cerr << "Error at position " << i << "\n"; 
+	for (size_t b = 0; b < batch_size; b++)
+	{
+		for (size_t i = 0; i < rows * cols * depth; i++)
+		{
+			mean[i] += X[(b * rows * cols * depth) + i];
+		}
+	}
 
-			std::cerr << "Reference:: " << std::setprecision(17) << +ref[i] <<"\n";
-			std::cerr << "GPU:: " << +gpu[i] << "\n";
+	for (size_t i = 0; i < rows * cols * depth; i++) mean[i] /= batch_size;
 
-			exit(1);
+	for (size_t b = 0; b < batch_size; b++)
+	{
+		for (size_t i = 0; i < rows * cols * depth; i++)
+		{
+			var[i] += pow(X[(b * rows * cols * depth) + i] - mean[i], 2);
+		}
+	}
+
+	for (size_t b = 0; b < batch_size; b++)
+	{
+		for (size_t i = 0; i < rows * cols * depth; i++)
+		{
+			X[(b * rows * cols * depth) + i] = (X[(b * rows * cols * depth) + i] - mean[i]) / sqrt(var[i] + EPSILON);
+		}
+	}
+
+	for (size_t b = 0; b < batch_size; b++)
+	{
+		for (size_t i = 0; i < rows * cols * depth; i++)
+		{
+			X[(b * rows * cols * depth) + i] *= gamma;
+			X[(b * rows * cols * depth) + i] += beta;
 		}
 	}
 }
 
 
-
-void checkResult(const std::string &reference_file, const std::string &output_file, float eps){
-	cv::Mat ref_img, out_img; 
-
-	ref_img = cv::imread(reference_file, -1);
-	out_img = cv::imread(output_file, -1);
-
-
-	unsigned char *refPtr = ref_img.ptr<unsigned char>(0);
-	unsigned char *oPtr = out_img.ptr<unsigned char>(0);
-
-	checkApproxResults(refPtr, oPtr, ref_img.rows*ref_img.cols*ref_img.channels());
-	std::cout << "PASSED!" << "\n";
-
-
-}
-
-void gaussian_blur_filter(float *arr, const int f_sz, const float f_sigma=0.2){ 
-	  float filterSum = 0.f;
-	  float norm_const = 0.0; // normalization const for the kernel 
-
-	  for(int r = -f_sz/2; r <= f_sz/2; r++){
-		 for(int c = -f_sz/2; c <= f_sz/2; c++){
-			  float fSum = expf(-(float)(r*r + c*c)/(2*f_sigma*f_sigma)); 
-			  arr[(r+f_sz/2)*f_sz + (c + f_sz/2)] = fSum; 
-			  filterSum  += fSum;
-		 }
-	  } 
-	
-	  norm_const = 1.f/filterSum; 
-
-	  for(int r = -f_sz/2; r <= f_sz/2; ++r){
-		 for(int c = -f_sz/2; c <= f_sz/2; ++c){
-			  arr[(r+f_sz/2)*f_sz + (c + f_sz/2)] *= norm_const;
-		 }
-	  }
-}
-
-
-
-
 int main(int argc, char const *argv[])
 {   
-	uchar4 *h_in_img, *h_o_img; // pointers to the actual image input and output pointers  
-	uchar4 *d_in_img, *d_o_img; // device images in/out
+	size_t batch_size;
+	std::string indir; 
+	std::string outdir; 
 
-	//unsigned char *h_red, *h_blue, *h_green; 
-	unsigned char *d_red, *d_green, *d_blue;   
-	unsigned char *d_red_blurred, *d_green_blurred, *d_blue_blurred;   
-
-	float *h_filter, *d_filter;  
-	cv::Mat imrgba, o_img; 
-
-	const int fWidth = 9; 
-	const float fDev = 2;
-	std::string infile; 
-	std::string outfile; 
-	std::string reference;
-
-
-	switch(argc){
-		case 2:
-			infile = std::string(argv[1]);
-			outfile = "cinque_gpu_gray.png";
-			break; 
-		case 3:
-			infile = std::string(argv[1]);
-			outfile = std::string(argv[2]);
-			break;
+	switch(argc)
+	{
 		case 4:
-			infile = std::string(argv[1]);
-			outfile = std::string(argv[2]);
-			reference = std::string(argv[3]);
+			batch_size = atoi(argv[1]);
+			indir = std::string(argv[2]);
+			outdir = std::string(argv[3]);
 			break;
 		default: 
-			std::cerr << "Usage ./gblur <in_image> <out_image> <reference_file> \n";
+			std::cerr << "Usage ./gblur batch_size <input_dir> <output_dir>\n";
 			exit(1);
-
-   }
-
-	// preprocess 
-	cv::Mat img = cv::imread(infile.c_str(), cv::IMREAD_COLOR); 
-	if (img.empty())
-	{
-		std::cerr << "Image file couldn't be read, exiting\n"; 
-		exit(1);
 	}
 
-	cv::cvtColor(img, imrgba, cv::COLOR_BGR2RGBA);
+	std::vector<cv::String> fn;
+	std::vector<cv::Mat> images;
+	cv::glob(indir, fn, false);
 
-	o_img.create(img.rows, img.cols, CV_8UC4); 
+	// randomly shuffle the file names
+	//unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+	//std::shuffle(std::begin(fn), std::end(fn), std::default_random_engine(seed));
 
-	const size_t  numPixels = img.rows*img.cols;  
-
-
-	h_in_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to input image 
-	h_o_img = (uchar4 *)imrgba.ptr<unsigned char>(0); // pointer to output image 
-
-	// allocate the memories for the device pointers  
-	checkCudaErrors(cudaMalloc((void **) &d_red, sizeof(unsigned char) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_blue, sizeof(unsigned) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_green, sizeof(unsigned) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_red_blurred, sizeof(unsigned) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_green_blurred, sizeof(unsigned) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_blue_blurred, sizeof(unsigned) * numPixels));
-
-	checkCudaErrors(cudaMalloc((void **) &d_in_img, sizeof(uchar4) * numPixels));
-	checkCudaErrors(cudaMalloc((void **) &d_o_img, sizeof(uchar4) * numPixels));
-
-	checkCudaErrors(cudaMemcpy(d_in_img, h_in_img, sizeof(uchar4)*numPixels, cudaMemcpyHostToDevice)); 
-
-
-	// filter allocation 
-	h_filter = new float[fWidth * fWidth];
-	gaussian_blur_filter(h_filter, fWidth, fDev); // create a filter of 9x9 with std_dev = 0.2  
-
-	printArray<float>(h_filter, fWidth * fWidth, fWidth); // printUtility.
-
-	// copy the filter over to GPU here 
-	checkCudaErrors(cudaMalloc((void **) &d_filter, sizeof(float) * fWidth * fWidth));
-	checkCudaErrors(cudaMemcpy(d_filter, h_filter, sizeof(float) * fWidth * fWidth, cudaMemcpyHostToDevice)); 
-
-
-	// kernel launch code 
-	your_gauss_blur(d_in_img, d_o_img, img.rows, img.cols, d_red, d_green, d_blue, 
-	d_red_blurred, d_green_blurred, d_blue_blurred, d_filter, fWidth);
-
-
-	// memcpy the output image to the host side.
-	checkCudaErrors(cudaMemcpy(h_o_img, d_o_img, sizeof(uchar4)*numPixels, cudaMemcpyDeviceToHost)); 
-
-	// create the image with the output data 
-
-	cv::Mat output(img.rows, img.cols, CV_8UC4, (void*)h_o_img); // generate output.
-
-	bool suc = cv::imwrite(outfile.c_str(), output);
-	if(!suc)
+	// read in images from the data directory and save them to a vector in float form normalized between 0,1
+	for (size_t i = 0; i < batch_size; i++)
 	{
-		std::cerr << "Couldn't write image!\n";
-		exit(1);
+		cv::Mat img = cv::imread(fn[i], 0);
+		cv::Mat f_img;
+		if (img.empty())
+		{
+			std::cout << fn[i] << " is invalid!" << std::endl;
+			continue;
+		}
+		img.convertTo(f_img, CV_32F, 1/255.0);
+		images.push_back(f_img);
 	}
 
-	// check if the caclulation was correct to a degree of tolerance
-	checkResult(reference, outfile, 1e-5);
+	// get stats on the input batch
+	batch_size = images.size();
+	std::cout << "batch size: " << batch_size << std::endl;
+	size_t rows = images[0].rows;
+	std::cout << "rows: " << rows << std::endl;
+	size_t cols = images[0].cols;
+	std::cout << "cols: " << cols << std::endl;
+	size_t channels = images[0].channels();
+	std::cout << "channels: " << channels << std::endl;
 
-	// free any necessary memory.
-	cudaFree(d_in_img);
-	cudaFree(d_o_img);
-	cudaFree(d_filter);
-	cudaFree(d_red_blurred);
-	cudaFree(d_green_blurred);
-	cudaFree(d_blue_blurred);
-	cudaFree(d_red);
-	cudaFree(d_green);
-	cudaFree(d_blue);
+	// allocate mem for the batch of data to be normalized
+	float *batch_data = (float *) malloc (sizeof(float) * batch_size * rows * cols * channels);
 
-	delete [] h_filter;
+	// memcpy the float data from the Mat object in the vector to the allocated array
+	for (size_t i = 0; i < batch_size; i++)
+	{
+		size_t offset = i * rows * cols * channels;
+		memcpy(&(batch_data[offset]), (float *)images[i].ptr<float>(0), sizeof(float) * rows * cols * channels);
+	}
+
+	// print images for debug
+	//for (size_t i = 0; i < batch_size; i++)
+	//{
+	//	size_t offset = i * rows * cols * channels;
+	//	print_matrix(&(batch_data[offset]), rows, cols);
+	//}
+
+	struct timespec	tp1, tp2;
+
+	std::cout << "performing serial batchnorm..." << std::endl;
+
+	clock_gettime(CLOCK_REALTIME, &tp1);
+	serial_batchnorm(batch_data, 1.0, 0.0, batch_size, rows, cols, channels);
+	clock_gettime(CLOCK_REALTIME, &tp2);
+
+	double d1 = tp1.tv_sec + tp1.tv_nsec / 1000000000.0;
+	double d2 = tp2.tv_sec + tp2.tv_nsec / 1000000000.0;
+
+	printf("Serial time (ms): %f\n", (d2 - d1) * 1000.0);
+
+	// write images
+	for (size_t i = 0; i < batch_size; i++)
+	{
+		size_t offset = i * rows * cols * channels;
+		cv::Mat o_img(rows, cols, CV_32F, &(batch_data[offset]));
+		cv::Mat o_img_uint8;
+		o_img.convertTo(o_img_uint8, CV_8U, 255);
+		std::string fname = outdir + std::to_string(i) + ".png";
+		cv::imwrite(fname, o_img_uint8);
+	}
+
+	
+
+
 	return 0;
 }
 
