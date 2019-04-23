@@ -87,20 +87,20 @@ int main(int argc, char const *argv[])
 	switch(argc)
 	{
 		case 2:
-			batch_size = atoi(argv[1])
+			batch_size = atoi(argv[1]);
 		case 4:
 			batch_size = atoi(argv[1]);
 			indir = std::string(argv[2]);
 			outdir = std::string(argv[3]);
 			break;
 		default: 
-			std::cerr << "Usage ./gblur batch_size <input_dir> <output_dir>\n
-						  input/output dir is optional for processing images\n";
+			std::cerr << "Usage ./gblur batch_size <input_dir> <output_dir>\n" \
+					  << "input/output dir is optional for processing images\n";
 			exit(1);
 	}
 
 	// process input data for image batch norm, otherwise random creation of intermediate layers
-	if (indir)
+	if (indir.length())
 	{
 		std::vector<cv::String> fn;
 		std::vector<cv::Mat> images;
