@@ -78,63 +78,91 @@ void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size
 
 int main(int argc, char const *argv[])
 {   
-	size_t batch_size;
+	size_t batch_size, rows, cols, channels;
 	std::string indir; 
 	std::string outdir; 
 
+	float *batch_data;
+
 	switch(argc)
 	{
+		case 2:
+			batch_size = atoi(argv[1])
 		case 4:
 			batch_size = atoi(argv[1]);
 			indir = std::string(argv[2]);
 			outdir = std::string(argv[3]);
 			break;
 		default: 
-			std::cerr << "Usage ./gblur batch_size <input_dir> <output_dir>\n";
+			std::cerr << "Usage ./gblur batch_size <input_dir> <output_dir>\n
+						  input/output dir is optional for processing images\n";
 			exit(1);
 	}
 
-	std::vector<cv::String> fn;
-	std::vector<cv::Mat> images;
-	cv::glob(indir, fn, false);
-
-	// randomly shuffle the file names
-	//unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-	//std::shuffle(std::begin(fn), std::end(fn), std::default_random_engine(seed));
-
-	// read in images from the data directory and save them to a vector in float form normalized between 0,1
-	for (size_t i = 0; i < batch_size; i++)
+	// process input data for image batch norm, otherwise random creation of intermediate layers
+	if (indir)
 	{
-		cv::Mat img = cv::imread(fn[i], 0);
-		cv::Mat f_img;
-		if (img.empty())
+		std::vector<cv::String> fn;
+		std::vector<cv::Mat> images;
+		cv::glob(indir, fn, false);
+
+		// randomly shuffle the file names
+		//unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+		//std::shuffle(std::begin(fn), std::end(fn), std::default_random_engine(seed));
+
+		// read in images from the data directory and save them to a vector in float form normalized between 0,1
+		for (size_t i = 0; i < batch_size; i++)
 		{
-			std::cout << fn[i] << " is invalid!" << std::endl;
-			continue;
+			cv::Mat img = cv::imread(fn[i], 0);
+			cv::Mat f_img;
+			if (img.empty())
+			{
+				std::cout << fn[i] << " is invalid!" << std::endl;
+				continue;
+			}
+			img.convertTo(f_img, CV_32F, 1/255.0);
+			images.push_back(f_img);
 		}
-		img.convertTo(f_img, CV_32F, 1/255.0);
-		images.push_back(f_img);
+
+		// get stats on the input batch
+		batch_size = images.size();
+		std::cout << "batch size: " << batch_size << std::endl;
+		rows = images[0].rows;
+		std::cout << "rows: " << rows << std::endl;
+		cols = images[0].cols;
+		std::cout << "cols: " << cols << std::endl;
+		channels = images[0].channels();
+		std::cout << "channels: " << channels << std::endl;
+
+		// allocate mem for the batch of data to be normalized
+		batch_data = (float *) malloc (sizeof(float) * batch_size * rows * cols * channels);		
+
+		// memcpy the float data from the Mat object in the vector to the allocated array
+		for (size_t i = 0; i < batch_size; i++)
+		{
+			size_t offset = i * rows * cols * channels;
+			memcpy(&(batch_data[offset]), (float *)images[i].ptr<float>(0), sizeof(float) * rows * cols * channels);
+		}
 	}
-
-	// get stats on the input batch
-	batch_size = images.size();
-	std::cout << "batch size: " << batch_size << std::endl;
-	size_t rows = images[0].rows;
-	std::cout << "rows: " << rows << std::endl;
-	size_t cols = images[0].cols;
-	std::cout << "cols: " << cols << std::endl;
-	size_t channels = images[0].channels();
-	std::cout << "channels: " << channels << std::endl;
-
-	// allocate mem for the batch of data to be normalized
-	float *batch_data = (float *) malloc (sizeof(float) * batch_size * rows * cols * channels);
-
-	// memcpy the float data from the Mat object in the vector to the allocated array
-	for (size_t i = 0; i < batch_size; i++)
+	else // random creation of 'intermediate layers'
 	{
-		size_t offset = i * rows * cols * channels;
-		memcpy(&(batch_data[offset]), (float *)images[i].ptr<float>(0), sizeof(float) * rows * cols * channels);
+		time_t t;
+		srand((unsigned) time(&t));
+
+		rows = cols = 128;
+		channels = 256;
+		batch_data = (float *) malloc (sizeof(float) * batch_size * rows * cols * channels);
+
+		for (size_t b = 0; b < batch_size; b++)
+		{
+			for (size_t i = 0; i < rows * cols * channels; i++)
+			{
+				float r = (float)(rand() / (float) RAND_MAX);
+				batch_data[(b * rows * cols * channels) + i] = r;
+			}
+		}
 	}
+
 
 	// print images for debug
 	//for (size_t i = 0; i < batch_size; i++)
