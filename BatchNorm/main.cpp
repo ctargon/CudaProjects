@@ -32,6 +32,26 @@ void print_matrix(float *in, int m, int n)
 }
 
 
+void checkResults(float *ref, float *gpu, size_t batch_size, size_t n_features){
+
+	for(size_t b = 0; b < batch_size; b++)
+	{
+		for (size_t i = 0; i < n_features; i++)
+		{
+			if(fabs(ref[b * n_features + i] - gpu[b * n_features + i]) > 1e-5){
+				std::cerr << "Error at position " << b << " " << i << "\n"; 
+
+				std::cerr << "Reference:: " << std::setprecision(10) << +ref[b * n_features + i] <<"\n";
+				std::cerr << "GPU:: " << +gpu[b * n_features + i] << "\n";
+
+				exit(1);
+			}
+		}
+	}
+	std::cout << "results match!" << std::endl;
+}
+
+
 void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size_t rows, size_t cols, size_t depth)
 {
 	float *mean = (float *) calloc (rows * cols * depth, sizeof(float));
@@ -62,13 +82,6 @@ void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size
 		for (size_t i = 0; i < rows * cols * depth; i++)
 		{
 			X[(b * rows * cols * depth) + i] = (X[(b * rows * cols * depth) + i] - mean[i]) / sqrt(var[i] + EPSILON);
-		}
-	}
-
-	for (size_t b = 0; b < batch_size; b++)
-	{
-		for (size_t i = 0; i < rows * cols * depth; i++)
-		{
 			X[(b * rows * cols * depth) + i] *= gamma;
 			X[(b * rows * cols * depth) + i] += beta;
 		}
@@ -82,7 +95,7 @@ int main(int argc, char const *argv[])
 	std::string indir; 
 	std::string outdir; 
 
-	float *batch_data;
+	float *batch_data, *h_batch_data, *d_batch_data, *d_mean, *d_var;
 
 	switch(argc)
 	{
@@ -144,6 +157,12 @@ int main(int argc, char const *argv[])
 			size_t offset = i * rows * cols * channels;
 			memcpy(&(batch_data[offset]), (float *)images[i].ptr<float>(0), sizeof(float) * rows * cols * channels);
 		}
+		// print images for debug
+		//for (size_t i = 0; i < batch_size; i++)
+		//{
+		//	size_t offset = i * rows * cols * channels;
+		//	print_matrix(&(batch_data[offset]), rows, cols);
+		//}
 	}
 	else // random creation of 'intermediate layers'
 	{
@@ -164,14 +183,13 @@ int main(int argc, char const *argv[])
 		}
 	}
 
+	// copy the batch_data whcih is used in serial verson to the host pointer
+	size_t batch_bytes = sizeof(float) * batch_size * rows * cols * channels;
+	size_t n_features = rows * cols * channels;
+	h_batch_data = (float *) malloc (batch_bytes);
+	memcpy(h_batch_data, batch_size, batch_bytes);
 
-	// print images for debug
-	//for (size_t i = 0; i < batch_size; i++)
-	//{
-	//	size_t offset = i * rows * cols * channels;
-	//	print_matrix(&(batch_data[offset]), rows, cols);
-	//}
-
+	// serial test
 	struct timespec	tp1, tp2;
 
 	std::cout << "performing serial batchnorm..." << std::endl;
@@ -185,19 +203,29 @@ int main(int argc, char const *argv[])
 
 	printf("Serial time (ms): %f\n", (d2 - d1) * 1000.0);
 
-	// write images
-	for (size_t i = 0; i < batch_size; i++)
-	{
-		size_t offset = i * rows * cols * channels;
-		cv::Mat o_img(rows, cols, CV_32F, &(batch_data[offset]));
-		cv::Mat o_img_uint8;
-		o_img.convertTo(o_img_uint8, CV_8U, 255);
-		std::string fname = outdir + std::to_string(i) + ".png";
-		cv::imwrite(fname, o_img_uint8);
-	}
+	// // write images
+	// for (size_t i = 0; i < batch_size; i++)
+	// {
+	// 	size_t offset = i * rows * cols * channels;
+	// 	cv::Mat o_img(rows, cols, CV_32F, &(batch_data[offset]));
+	// 	cv::Mat o_img_uint8;
+	// 	o_img.convertTo(o_img_uint8, CV_8U, 255);
+	// 	std::string fname = outdir + std::to_string(i) + ".png";
+	// 	cv::imwrite(fname, o_img_uint8);
+	// }
 
+	// parallel test
+	checkCudaErrors(cudaMalloc((void **) &d_batch_data, batch_bytes));
+	checkCudaErrors(cudaMalloc((void **) &d_mean, sizeof(float) * n_features));
+	checkCudaErrors(cudaMalloc((void **) &d_var, sizeof(float) * n_features));
+
+	checkCudaErrors(cudaMemcpy(d_batch_data, h_batch_data, batch_bytes, cudaMemcpyHostToDevice)); 
 	
+	launch_batchnorm(d_batch_data, d_mean, d_var, batch_size, rows, cols, channels);
 
+	checkCudaErrors(cudaMemcpy(h_batch_data, d_batch_data, batch_bytes, cudaMemcpyDeviceToHost)); 
+
+	checkResults(batch_data, h_batch_data, batch_size, n_features);
 
 	return 0;
 }

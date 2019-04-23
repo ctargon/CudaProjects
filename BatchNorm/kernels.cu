@@ -1,121 +1,93 @@
 #include "batchnorm.h" 
 #include <math.h>
 
-#define BLOCK_SIZE 16
-
+#define BLOCK_SIZE 1024
+#define EPSILON 1e-8
 /*
-	The actual gaussian blur kernel to be implemented by 
-	you. Keep in mind that the kernel operates on a 
-	single channel.
+	Kernel to calculate the mean
  */
 __global__ 
-void gaussianBlur(unsigned char *d_in, unsigned char *d_out, int fWidth, 
-					const int numRows, const int numCols, float *d_filter)
+void mean(float *batch, float *mean, const int batch_size, 
+		  const int rows, const int cols, const int depth)
 {
-	int i, j;
-	int x = blockIdx.x * blockDim.x + threadIdx.x;
-	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	if (x < numCols && y < numRows)
+	if (idx < rows * cols * depth)
 	{
-		int pixVal = 0;
-
-		int x_start = x - (fWidth / 2);
-		int y_start = y - (fWidth / 2);
-
-		for (i = 0; i < fWidth; i++)
+		mean[idx] = 0;
+		for (size_t b = 0; b < batch_size; b++)
 		{
-			for (j = 0; j < fWidth; j++)
-			{
-				int curX = x_start + j;
-				int curY = y_start + i;
-				if (curX > -1 && curX < numCols && curY > -1 && curY < numRows)
-				{
-					pixVal += d_in[curY * numCols + curX] * d_filter[i * fWidth + j];
-				}
-			}
+			mean[idx] += batch[(b * rows * cols * depth) + idxs];
 		}
-		d_out[y * numCols + x] = (unsigned char) pixVal;
 	}
+	__syncthreads();
+	if (idx < rows * cols * depth) mean[idx] /= batch_size;
 } 
-
-#define TILE_WIDTH 32
-
-__global__ 
-void separateChannels(uchar4 *d_imrgba, const int numRows, const int numCols,
-						unsigned char *d_r, unsigned char *d_g,
-						unsigned char *d_b)
-{
-	int x = blockIdx.x * blockDim.x + threadIdx.x;
-	int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-	if (x < numCols && y < numRows)
-	{
-		int i = y * numCols + x;
-
-		d_r[i] = d_imrgba[i].x;
-		d_g[i] = d_imrgba[i].y;
-		d_b[i] = d_imrgba[i].z;
-	}
-} 
- 
 
 /*
-	Given input channels combine them 
-	into a single uchar4 channel. 
-
-	You can use some handy constructors provided by the 
-	cuda library i.e. 
-	make_int2(x, y) -> creates a vector of type int2 having x,y components 
-	make_uchar4(x,y,z,255) -> creates a vector of uchar4 type x,y,z components 
-	the last argument being the transperency value. 
+	Kernel to calculate the variance
  */
 __global__ 
-void recombineChannels(unsigned char *d_r, unsigned char *d_g, unsigned char *d_b, 
-						uchar4 *d_orgba, const int numRows, const int numCols)
+void variance(float *batch, float *mean, float *var, const int batch_size, 
+		  const int rows, const int cols, const int depth)
 {
-	int row = blockIdx.x * blockDim.x + threadIdx.x;
-	int col = blockIdx.y * blockDim.y + threadIdx.y;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	if (row < numCols && col < numRows)
+	if (idx < rows * cols * depth)
 	{
-		int i = col * numCols + row;
+		var[idx] = 0;
+		for (size_t b = 0; b < batch_size; b++)
+		{
+			var[idx] += pow(batch[(b * rows * cols * depth) + idx] - mean[idx], 2);
+		}
+	}
+	__syncthreads();
+	if (idx < rows * cols * depth) var[idx] /= batch_size;
+} 
 
-		//d_orgba[i] = make_uchar4(d_r[i], d_g[i], d_b[i], 255);
-		// save the output as bgr, not rgb, because opencv defaults to that
-		d_orgba[i] = make_uchar4(d_b[i], d_g[i], d_r[i], 255); 
+/*
+	Kernel to calculate batch normalization
+ */
+__global__ 
+void compute(float *batch, float *mean, float *var, const int batch_size, 
+		  const int rows, const int cols, const int depth, const float gamma,
+		  const float beta)
+{
+	int feature_i = blockIdx.x * blockDim.x + threadIdx.x;
+	int batch_i = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (batch_i < batch_size && feature_i < rows * cols * depth)
+	{
+		float prev_val = batch[(batch_i * rows * cols * depth) + feature_i];
+		float mu = mean[feature_i];
+		float sig = var[feature_i];
+		float norm = (prev_val - mu) / sqrt(sig + EPSILON);
+		float scaled = (gamma * norm) + beta
+		batch[(batch_i * rows * cols * depth) + feature_i] = scaled;
 	}
 } 
 
 
-void launch_batchnorm(uchar4* d_imrgba, uchar4 *d_oimrgba, size_t rows, size_t cols, 
-		unsigned char *d_red, unsigned char *d_green, unsigned char *d_blue, 
-		unsigned char *d_rblurred, unsigned char *d_gblurred, unsigned char *d_bblurred,
-		float *d_filter,  int filterWidth){
- 
-	dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE, 1);
-	dim3 gridSize(ceil(cols / (float)BLOCK_SIZE), ceil(rows / (float)BLOCK_SIZE), 1);
 
-	separateChannels<<<gridSize, blockSize>>>(d_imrgba, rows, cols, d_red, d_green, d_blue); 
+void launch_batchnorm(float *batch, float *mean, float *var, 
+					  size_t batch_size, size_t rows, size_t cols, 
+					  size_t depth)
+{
+	int n_features = rows * cols * depth;
+	dim3 blockSize(BLOCK_SIZE, 1, 1);
+	dim3 gridSize(ceil(n_features / (float)BLOCK_SIZE), 1, 1);
+
+	mean<<<gridSize, blockSize>>>(batch, mean, batch_size, rows, cols, depth); 
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());  
 
-	gaussianBlur<<<gridSize, blockSize>>>(d_red, d_rblurred, filterWidth, rows, cols, d_filter); 
+	variance<<<gridSize, blockSize>>>(batch, mean, var, batch_size, rows, cols, depth); 
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());  
 
-	gaussianBlur<<<gridSize, blockSize>>>(d_green, d_gblurred, filterWidth, rows, cols, d_filter);  
+	compute<<<gridSize, blockSize>>>(batch, mean, var, batch_size, rows, cols, depth, 1.0, 0.0); 
 	cudaDeviceSynchronize();
 	checkCudaErrors(cudaGetLastError());  
-
-	gaussianBlur<<<gridSize, blockSize>>>(d_blue, d_bblurred, filterWidth, rows, cols, d_filter); 
-	cudaDeviceSynchronize();
-	checkCudaErrors(cudaGetLastError());   
-
-	recombineChannels<<<gridSize, blockSize>>>(d_rblurred, d_gblurred, d_bblurred, d_oimrgba, rows, cols); 
-
-	cudaDeviceSynchronize();
-	checkCudaErrors(cudaGetLastError());   
 
 }
 
