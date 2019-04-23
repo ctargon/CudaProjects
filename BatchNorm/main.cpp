@@ -88,6 +88,7 @@ int main(int argc, char const *argv[])
 	{
 		case 2:
 			batch_size = atoi(argv[1]);
+			break;
 		case 4:
 			batch_size = atoi(argv[1]);
 			indir = std::string(argv[2]);
@@ -100,7 +101,7 @@ int main(int argc, char const *argv[])
 	}
 
 	// process input data for image batch norm, otherwise random creation of intermediate layers
-	if (indir.length())
+	if (argc > 2)
 	{
 		std::vector<cv::String> fn;
 		std::vector<cv::Mat> images;
