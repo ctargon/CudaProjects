@@ -13,7 +13,7 @@
 #include "utils.h"
 #include "batchnorm.h"
 
-#define EPSILON 1e-3
+#define EPSILON 1e-8
 
 void print_matrix(float *in, int m, int n)
 {
@@ -35,7 +35,7 @@ void print_matrix(float *in, int m, int n)
 void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size_t rows, size_t cols, size_t depth)
 {
 	float *mean = (float *) calloc (rows * cols * depth, sizeof(float));
-	float *var = (float *) malloc (sizeof(float) * rows * cols * depth);
+	float *var = (float *) calloc (rows * cols * depth, sizeof(float));
 
 	for (size_t b = 0; b < batch_size; b++)
 	{
@@ -54,6 +54,8 @@ void serial_batchnorm(float *X, float gamma, float beta, size_t batch_size, size
 			var[i] += pow(X[(b * rows * cols * depth) + i] - mean[i], 2);
 		}
 	}
+
+	for (size_t i = 0; i < rows * cols * depth; i++) var[i] /= batch_size;	
 
 	for (size_t b = 0; b < batch_size; b++)
 	{
