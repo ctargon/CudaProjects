@@ -169,8 +169,8 @@ int main(int argc, char const *argv[])
 		time_t t;
 		srand((unsigned) time(&t));
 
-		rows = cols = 128;
-		channels = 256;
+		rows = cols = 64;
+		channels = 512;
 		batch_data = (float *) malloc (sizeof(float) * batch_size * rows * cols * channels);
 
 		for (size_t b = 0; b < batch_size; b++)
@@ -187,7 +187,7 @@ int main(int argc, char const *argv[])
 	size_t batch_bytes = sizeof(float) * batch_size * rows * cols * channels;
 	size_t n_features = rows * cols * channels;
 	h_batch_data = (float *) malloc (batch_bytes);
-	memcpy(h_batch_data, batch_size, batch_bytes);
+	memcpy(h_batch_data, batch_data, batch_bytes);
 
 	// serial test
 	struct timespec	tp1, tp2;
@@ -220,10 +220,18 @@ int main(int argc, char const *argv[])
 	checkCudaErrors(cudaMalloc((void **) &d_var, sizeof(float) * n_features));
 
 	checkCudaErrors(cudaMemcpy(d_batch_data, h_batch_data, batch_bytes, cudaMemcpyHostToDevice)); 
-	
+
+	clock_gettime(CLOCK_REALTIME, &tp1);	
 	launch_batchnorm(d_batch_data, d_mean, d_var, batch_size, rows, cols, channels);
+	clock_gettime(CLOCK_REALTIME, &tp2);
 
 	checkCudaErrors(cudaMemcpy(h_batch_data, d_batch_data, batch_bytes, cudaMemcpyDeviceToHost)); 
+
+	d1 = tp1.tv_sec + tp1.tv_nsec / 1000000000.0;
+	d2 = tp2.tv_sec + tp2.tv_nsec / 1000000000.0;
+
+	printf("CUDA time (ms): %f\n", (d2 - d1) * 1000.0);
+
 
 	checkResults(batch_data, h_batch_data, batch_size, n_features);
 
